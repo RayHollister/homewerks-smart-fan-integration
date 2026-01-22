@@ -1,0 +1,21 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Homewerks Smart Fan",
+        "description": "Enter the IP address of your Homewerks Smart Fan (7148-01-AX).",
+        "data": {
+          "host": "IP Address",
+          "name": "Device Name"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the fan. Please check the IP address and ensure the fan is powered on.",
+      "unknown": "An unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This device is already configured."
+    }
+  }
+}
