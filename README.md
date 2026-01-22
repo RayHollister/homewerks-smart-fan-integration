@@ -8,6 +8,8 @@ A custom Home Assistant integration for the Homewerks Smart Fan (7148-01-AX) wit
 - **Light Control**: Turn the LED light on/off
 - **Brightness Control**: Adjust light brightness (0-100%)
 - **Color Temperature**: Adjust light color from warm white (2200K) to cool white (7000K)
+- **Speaker Volume**: Control the built-in Bluetooth speaker volume (0-100%)
+- **Volume Mute**: Mute/unmute the speaker
 
 ## Supported Devices
 

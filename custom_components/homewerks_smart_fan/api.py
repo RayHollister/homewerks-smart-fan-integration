@@ -5,6 +5,7 @@ import json
 import logging
 import struct
 from typing import Any
+import aiohttp
 
 from .const import (
     CONNECTION_TIMEOUT,
@@ -15,8 +16,11 @@ from .const import (
     KEY_FAN_POWER,
     KEY_LIGHT_POWER,
     KEY_PERCENTAGE,
+    MAX_COLOR_TEMP_KELVIN,
+    MIN_COLOR_TEMP_KELVIN,
     PAYLOAD_PREFIX,
     PAYLOAD_SUFFIX,
+    UPNP_PORT,
     VALUE_OFF,
     VALUE_ON,
 )
@@ -39,9 +43,11 @@ class HomewerksSmartFanApi:
             "light_power": False,
             "brightness": 100,
             "color_temp": 4000,
+            "volume": 50,
         }
         self._listener_task: asyncio.Task | None = None
         self._connected = False
+        self._upnp_port = UPNP_PORT
 
     @property
     def host(self) -> str:
@@ -87,6 +93,12 @@ class HomewerksSmartFanApi:
             _LOGGER.debug("Failed to parse response: %s", err)
             return None
 
+    def _invert_color_temp(self, temp: int) -> int:
+        """Invert color temperature (device uses opposite scale from standard Kelvin)."""
+        # Device: 2200 = cool, 7000 = warm (opposite of standard Kelvin)
+        # Standard Kelvin: 2200 = warm, 7000 = cool
+        return MIN_COLOR_TEMP_KELVIN + MAX_COLOR_TEMP_KELVIN - temp
+
     def _update_state_from_response(self, parsed: dict[str, Any]) -> None:
         """Update internal state from parsed response."""
         if KEY_FAN_POWER in parsed:
@@ -96,7 +108,9 @@ class HomewerksSmartFanApi:
         if KEY_PERCENTAGE in parsed:
             self._state["brightness"] = parsed[KEY_PERCENTAGE]
         if KEY_COLOR_TEMPERATURE in parsed:
-            self._state["color_temp"] = parsed[KEY_COLOR_TEMPERATURE]
+            # Invert color temp from device scale to standard Kelvin
+            device_temp = parsed[KEY_COLOR_TEMPERATURE]
+            self._state["color_temp"] = self._invert_color_temp(device_temp)
 
     async def connect(self) -> bool:
         """Connect to the device."""
@@ -213,8 +227,10 @@ class HomewerksSmartFanApi:
 
     async def set_color_temperature(self, temp_kelvin: int) -> bool:
         """Set the color temperature in Kelvin."""
-        temp_kelvin = max(2200, min(7000, temp_kelvin))
-        return await self._send_command({KEY_COLOR_TEMPERATURE: temp_kelvin})
+        temp_kelvin = max(MIN_COLOR_TEMP_KELVIN, min(MAX_COLOR_TEMP_KELVIN, temp_kelvin))
+        # Invert to device scale before sending
+        device_temp = self._invert_color_temp(temp_kelvin)
+        return await self._send_command({KEY_COLOR_TEMPERATURE: device_temp})
 
     async def test_connection(self) -> bool:
         """Test if we can connect to the device."""
@@ -228,3 +244,86 @@ class HomewerksSmartFanApi:
             return True
         except (OSError, asyncio.TimeoutError):
             return False
+
+    async def _upnp_action(self, service: str, action: str, args: str = "") -> str | None:
+        """Execute a UPnP SOAP action."""
+        url = f"http://{self._host}:{self._upnp_port}/upnp/control/rendercontrol1"
+        headers = {
+            "Content-Type": 'text/xml; charset="utf-8"',
+            "SOAPACTION": f'"urn:schemas-upnp-org:service:{service}:1#{action}"',
+        }
+        body = f"""<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <u:{action} xmlns:u="urn:schemas-upnp-org:service:{service}:1">
+      <InstanceID>0</InstanceID>
+      {args}
+    </u:{action}>
+  </s:Body>
+</s:Envelope>"""
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    url, headers=headers, data=body, timeout=aiohttp.ClientTimeout(total=5)
+                ) as response:
+                    return await response.text()
+        except Exception as err:
+            _LOGGER.error("UPnP action failed: %s", err)
+            return None
+
+    async def get_volume(self) -> int | None:
+        """Get the current volume level (0-100)."""
+        response = await self._upnp_action(
+            "RenderingControl",
+            "GetVolume",
+            "<Channel>Master</Channel>",
+        )
+        if response and "<CurrentVolume>" in response:
+            try:
+                start = response.find("<CurrentVolume>") + len("<CurrentVolume>")
+                end = response.find("</CurrentVolume>")
+                volume = int(response[start:end])
+                self._state["volume"] = volume
+                return volume
+            except (ValueError, IndexError):
+                pass
+        return None
+
+    async def set_volume(self, volume: int) -> bool:
+        """Set the volume level (0-100)."""
+        volume = max(0, min(100, volume))
+        response = await self._upnp_action(
+            "RenderingControl",
+            "SetVolume",
+            f"<Channel>Master</Channel><DesiredVolume>{volume}</DesiredVolume>",
+        )
+        if response:
+            self._state["volume"] = volume
+            return True
+        return False
+
+    async def get_mute(self) -> bool | None:
+        """Get the current mute state."""
+        response = await self._upnp_action(
+            "RenderingControl",
+            "GetMute",
+            "<Channel>Master</Channel>",
+        )
+        if response and "<CurrentMute>" in response:
+            try:
+                start = response.find("<CurrentMute>") + len("<CurrentMute>")
+                end = response.find("</CurrentMute>")
+                return response[start:end] == "1"
+            except (ValueError, IndexError):
+                pass
+        return None
+
+    async def set_mute(self, mute: bool) -> bool:
+        """Set the mute state."""
+        response = await self._upnp_action(
+            "RenderingControl",
+            "SetMute",
+            f"<Channel>Master</Channel><DesiredMute>{1 if mute else 0}</DesiredMute>",
+        )
+        return response is not None

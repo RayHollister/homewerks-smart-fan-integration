@@ -4,6 +4,7 @@ DOMAIN = "homewerks_smart_fan"
 
 # Device connection
 DEFAULT_PORT = 8899
+UPNP_PORT = 59152
 
 # Frame protocol
 FRAME_HEADER = b'\x18\x96\x18\x20'
