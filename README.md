@@ -2,6 +2,16 @@
 
 A custom Home Assistant integration for the Homewerks Smart Fan (7148-01-AX) with Alexa, LED Light, and Bluetooth Speakers.
 
+## Disclaimer
+
+**This is an unofficial, community-developed integration.** It is not created, endorsed, supported, or affiliated with Homewerks Worldwide, LLC or any of its subsidiaries. "Homewerks" is a trademark of Homewerks Worldwide, LLC.
+
+This integration was developed through reverse engineering of the device's network protocol for personal use and is provided "as is" without warranty of any kind. Use at your own risk.
+
+- No official support is available from Homewerks for this integration
+- This integration may stop working if the device firmware is updated
+- The authors are not responsible for any damage to your device or system
+
 ## Features
 
 - **Fan Control**: Turn the bathroom exhaust fan on/off

@@ -37,6 +37,7 @@ class HomewerksSmartFanSpeaker(MediaPlayerEntity):
     """Representation of a Homewerks Smart Fan speaker."""
 
     _attr_has_entity_name = True
+    _attr_icon = "mdi:speaker"
     _attr_supported_features = (
         MediaPlayerEntityFeature.VOLUME_SET
         | MediaPlayerEntityFeature.VOLUME_MUTE

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.1] - 2025-01-22
+
+### Added
+- Fan entity icon (mdi:fan)
+- Speaker entity icon (mdi:speaker)
+- Disclaimer in README about unofficial status
+
 ## [1.1.0] - 2025-01-22
 
 ### Added

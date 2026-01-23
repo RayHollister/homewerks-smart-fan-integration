@@ -34,6 +34,7 @@ class HomewerksSmartFanEntity(FanEntity):
 
     _attr_has_entity_name = True
     _attr_supported_features = FanEntityFeature.TURN_ON | FanEntityFeature.TURN_OFF
+    _attr_icon = "mdi:fan"
 
     def __init__(
         self,
