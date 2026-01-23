@@ -48,6 +48,25 @@ class HomewerksSmartFanApi:
         self._listener_task: asyncio.Task | None = None
         self._connected = False
         self._upnp_port = UPNP_PORT
+        self._state_callbacks: list[callable] = []
+
+    def register_state_callback(self, callback: callable) -> None:
+        """Register a callback to be called when state changes."""
+        if callback not in self._state_callbacks:
+            self._state_callbacks.append(callback)
+
+    def unregister_state_callback(self, callback: callable) -> None:
+        """Unregister a state callback."""
+        if callback in self._state_callbacks:
+            self._state_callbacks.remove(callback)
+
+    def _notify_state_change(self) -> None:
+        """Notify all registered callbacks of a state change."""
+        for callback in self._state_callbacks:
+            try:
+                callback()
+            except Exception as err:
+                _LOGGER.debug("Error in state callback: %s", err)
 
     @property
     def host(self) -> str:
@@ -99,18 +118,34 @@ class HomewerksSmartFanApi:
         # Standard Kelvin: 2200 = warm, 7000 = cool
         return MIN_COLOR_TEMP_KELVIN + MAX_COLOR_TEMP_KELVIN - temp
 
-    def _update_state_from_response(self, parsed: dict[str, Any]) -> None:
+    def _update_state_from_response(self, parsed: dict[str, Any], notify: bool = True) -> None:
         """Update internal state from parsed response."""
+        changed = False
         if KEY_FAN_POWER in parsed:
-            self._state["fan_power"] = parsed[KEY_FAN_POWER] == VALUE_ON
+            new_val = parsed[KEY_FAN_POWER] == VALUE_ON
+            if self._state["fan_power"] != new_val:
+                self._state["fan_power"] = new_val
+                changed = True
         if KEY_LIGHT_POWER in parsed:
-            self._state["light_power"] = parsed[KEY_LIGHT_POWER] == VALUE_ON
+            new_val = parsed[KEY_LIGHT_POWER] == VALUE_ON
+            if self._state["light_power"] != new_val:
+                self._state["light_power"] = new_val
+                changed = True
         if KEY_PERCENTAGE in parsed:
-            self._state["brightness"] = parsed[KEY_PERCENTAGE]
+            new_val = parsed[KEY_PERCENTAGE]
+            if self._state["brightness"] != new_val:
+                self._state["brightness"] = new_val
+                changed = True
         if KEY_COLOR_TEMPERATURE in parsed:
             # Invert color temp from device scale to standard Kelvin
             device_temp = parsed[KEY_COLOR_TEMPERATURE]
-            self._state["color_temp"] = self._invert_color_temp(device_temp)
+            new_val = self._invert_color_temp(device_temp)
+            if self._state["color_temp"] != new_val:
+                self._state["color_temp"] = new_val
+                changed = True
+
+        if changed and notify:
+            self._notify_state_change()
 
     async def connect(self) -> bool:
         """Connect to the device."""
@@ -201,8 +236,8 @@ class HomewerksSmartFanApi:
                 # Wait briefly for response
                 await asyncio.sleep(0.3)
 
-                # Update state optimistically
-                self._update_state_from_response(data)
+                # Update state optimistically and notify
+                self._update_state_from_response(data, notify=True)
 
                 _LOGGER.debug("Sent command: %s", data)
                 return True
@@ -210,6 +245,28 @@ class HomewerksSmartFanApi:
             except Exception as err:
                 _LOGGER.error("Failed to send command: %s", err)
                 self._connected = False
+                return False
+
+    async def request_state(self) -> bool:
+        """Request current state from the device by sending a query."""
+        # The device broadcasts state periodically, but we can also
+        # trigger a state report by sending a status query command
+        if not self._connected:
+            if not await self.connect():
+                return False
+
+        async with self._lock:
+            try:
+                # Send a query to get current state
+                # Try sending a "get" command - device may respond with current state
+                query = {"STA": "query"}
+                frame = self._build_frame(query)
+                self._writer.write(frame)
+                await self._writer.drain()
+                _LOGGER.debug("Requested state from device")
+                return True
+            except Exception as err:
+                _LOGGER.debug("Failed to request state: %s", err)
                 return False
 
     async def set_fan_power(self, on: bool) -> bool:
@@ -284,7 +341,9 @@ class HomewerksSmartFanApi:
                 start = response.find("<CurrentVolume>") + len("<CurrentVolume>")
                 end = response.find("</CurrentVolume>")
                 volume = int(response[start:end])
-                self._state["volume"] = volume
+                if self._state["volume"] != volume:
+                    self._state["volume"] = volume
+                    self._notify_state_change()
                 return volume
             except (ValueError, IndexError):
                 pass
@@ -299,7 +358,9 @@ class HomewerksSmartFanApi:
             f"<Channel>Master</Channel><DesiredVolume>{volume}</DesiredVolume>",
         )
         if response:
-            self._state["volume"] = volume
+            if self._state["volume"] != volume:
+                self._state["volume"] = volume
+                self._notify_state_change()
             return True
         return False
 

@@ -13,7 +13,7 @@ from homeassistant.components.light import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import HomewerksSmartFanApi
@@ -42,6 +42,7 @@ class HomewerksSmartFanLight(LightEntity):
     _attr_supported_color_modes = {ColorMode.COLOR_TEMP}
     _attr_min_color_temp_kelvin = MIN_COLOR_TEMP_KELVIN
     _attr_max_color_temp_kelvin = MAX_COLOR_TEMP_KELVIN
+    _attr_should_poll = False
 
     def __init__(
         self,
@@ -59,6 +60,19 @@ class HomewerksSmartFanLight(LightEntity):
             "manufacturer": "Homewerks",
             "model": "7148-01-AX Smart Fan",
         }
+
+    async def async_added_to_hass(self) -> None:
+        """Run when entity is added to hass."""
+        self._api.register_state_callback(self._handle_state_update)
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Run when entity is removed from hass."""
+        self._api.unregister_state_callback(self._handle_state_update)
+
+    @callback
+    def _handle_state_update(self) -> None:
+        """Handle state update from the API."""
+        self.async_write_ha_state()
 
     @property
     def is_on(self) -> bool:

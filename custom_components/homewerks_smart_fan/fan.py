@@ -8,7 +8,7 @@ from typing import Any
 from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import HomewerksSmartFanApi
@@ -35,6 +35,7 @@ class HomewerksSmartFanEntity(FanEntity):
     _attr_has_entity_name = True
     _attr_supported_features = FanEntityFeature.TURN_ON | FanEntityFeature.TURN_OFF
     _attr_icon = "mdi:fan"
+    _attr_should_poll = False
 
     def __init__(
         self,
@@ -52,6 +53,19 @@ class HomewerksSmartFanEntity(FanEntity):
             "manufacturer": "Homewerks",
             "model": "7148-01-AX Smart Fan",
         }
+
+    async def async_added_to_hass(self) -> None:
+        """Run when entity is added to hass."""
+        self._api.register_state_callback(self._handle_state_update)
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Run when entity is removed from hass."""
+        self._api.unregister_state_callback(self._handle_state_update)
+
+    @callback
+    def _handle_state_update(self) -> None:
+        """Handle state update from the API."""
+        self.async_write_ha_state()
 
     @property
     def is_on(self) -> bool:

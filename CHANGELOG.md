@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2025-01-22
+
+### Added
+- Real-time state synchronization with Home Assistant UI
+- Callback system for instant entity updates when device state changes
+- Initial volume fetch when speaker entity loads
+
+### Fixed
+- Entity states now properly reflect device status in Home Assistant
+- State changes from device now immediately update the UI
+
 ## [1.1.2] - 2025-01-22
 
 ### Added

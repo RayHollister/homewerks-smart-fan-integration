@@ -12,7 +12,7 @@ from homeassistant.components.media_player import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import HomewerksSmartFanApi
@@ -43,6 +43,7 @@ class HomewerksSmartFanSpeaker(MediaPlayerEntity):
         | MediaPlayerEntityFeature.VOLUME_MUTE
         | MediaPlayerEntityFeature.VOLUME_STEP
     )
+    _attr_should_poll = False
 
     def __init__(
         self,
@@ -61,6 +62,21 @@ class HomewerksSmartFanSpeaker(MediaPlayerEntity):
             "model": "7148-01-AX Smart Fan",
         }
         self._is_muted = False
+
+    async def async_added_to_hass(self) -> None:
+        """Run when entity is added to hass."""
+        self._api.register_state_callback(self._handle_state_update)
+        # Fetch initial volume
+        await self._api.get_volume()
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Run when entity is removed from hass."""
+        self._api.unregister_state_callback(self._handle_state_update)
+
+    @callback
+    def _handle_state_update(self) -> None:
+        """Handle state update from the API."""
+        self.async_write_ha_state()
 
     @property
     def state(self) -> MediaPlayerState:
@@ -97,7 +113,4 @@ class HomewerksSmartFanSpeaker(MediaPlayerEntity):
         """Mute or unmute the speaker."""
         if await self._api.set_mute(mute):
             self._is_muted = mute
-
-    async def async_update(self) -> None:
-        """Fetch current volume from device."""
-        await self._api.get_volume()
+            self.async_write_ha_state()
