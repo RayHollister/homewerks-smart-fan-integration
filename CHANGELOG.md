@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.2] - 2025-01-22
+
+### Added
+- Integration brand icon for Home Assistant UI and HACS
+
 ## [1.1.1] - 2025-01-22
 
 ### Added
