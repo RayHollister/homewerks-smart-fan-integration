@@ -20,6 +20,7 @@ from .const import (
     MIN_COLOR_TEMP_KELVIN,
     PAYLOAD_PREFIX,
     PAYLOAD_SUFFIX,
+    SUPPORTED_DEVICE_COLOR_TEMPS,
     UPNP_PORT,
     VALUE_OFF,
     VALUE_ON,
@@ -132,6 +133,15 @@ class HomewerksSmartFanApi:
         # Standard Kelvin: 2200 = warm, 7000 = cool
         return MIN_COLOR_TEMP_KELVIN + MAX_COLOR_TEMP_KELVIN - temp
 
+    @staticmethod
+    def _snap_device_color_temp(device_temp: int) -> int:
+        """Snap a device color temperature to the nearest supported value.
+
+        The device only supports four discrete color temps:
+        7000 (warm), 5500 (soft), 2700 (cool), 2200 (daylight).
+        """
+        return min(SUPPORTED_DEVICE_COLOR_TEMPS, key=lambda t: abs(t - device_temp))
+
     def _update_state_from_response(self, parsed: dict[str, Any], notify: bool = True) -> None:
         """Update internal state from parsed response."""
         changed = False
@@ -147,14 +157,13 @@ class HomewerksSmartFanApi:
                 changed = True
         if KEY_PERCENTAGE in parsed:
             raw_val = parsed[KEY_PERCENTAGE]
-            # Device reports brightness as 0-255, normalize to 0-100
-            if isinstance(raw_val, (int, float)) and raw_val > 100:
-                new_val = round(raw_val * 100 / 255)
-            else:
-                new_val = raw_val
-            if self._state["brightness"] != new_val:
-                self._state["brightness"] = new_val
-                changed = True
+            # Device broadcasts percentage=255 as a sentinel meaning
+            # "I don't track brightness". Ignore it — only accept 0-100.
+            if isinstance(raw_val, (int, float)) and raw_val <= 100:
+                new_val = int(raw_val)
+                if self._state["brightness"] != new_val:
+                    self._state["brightness"] = new_val
+                    changed = True
         if KEY_COLOR_TEMPERATURE in parsed:
             # Invert color temp from device scale to standard Kelvin
             device_temp = parsed[KEY_COLOR_TEMPERATURE]
@@ -373,9 +382,14 @@ class HomewerksSmartFanApi:
     async def set_color_temperature(self, temp_kelvin: int) -> bool:
         """Set the color temperature in Kelvin."""
         temp_kelvin = max(MIN_COLOR_TEMP_KELVIN, min(MAX_COLOR_TEMP_KELVIN, temp_kelvin))
-        # Invert to device scale before sending
+        # Invert to device scale, then snap to nearest supported value
         device_temp = self._invert_color_temp(temp_kelvin)
+        device_temp = self._snap_device_color_temp(device_temp)
         return await self._send_command({KEY_COLOR_TEMPERATURE: device_temp})
+
+    async def send_command(self, data: dict[str, Any]) -> bool:
+        """Send a combined command to the device (public API)."""
+        return await self._send_command(data)
 
     async def test_connection(self) -> bool:
         """Test if we can connect to the device."""

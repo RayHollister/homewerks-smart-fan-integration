@@ -32,6 +32,10 @@ VALUE_OFF = "OFF"
 MIN_COLOR_TEMP_KELVIN = 2200
 MAX_COLOR_TEMP_KELVIN = 7000
 
+# Supported device color temperature values (device scale, inverted from Kelvin)
+# Device 7000=warm, 5500=soft, 2700=cool, 2200=daylight
+SUPPORTED_DEVICE_COLOR_TEMPS = [2200, 2700, 5500, 7000]
+
 # Brightness range
 MIN_BRIGHTNESS = 0
 MAX_BRIGHTNESS = 100

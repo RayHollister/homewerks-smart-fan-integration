@@ -18,7 +18,17 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import HomewerksSmartFanApi
-from .const import DOMAIN, MAX_COLOR_TEMP_KELVIN, MIN_COLOR_TEMP_KELVIN, SCAN_INTERVAL as SCAN_INTERVAL_SECONDS
+from .const import (
+    DOMAIN,
+    KEY_COLOR_TEMPERATURE,
+    KEY_LIGHT_POWER,
+    KEY_PERCENTAGE,
+    MAX_COLOR_TEMP_KELVIN,
+    MIN_COLOR_TEMP_KELVIN,
+    SCAN_INTERVAL as SCAN_INTERVAL_SECONDS,
+    SUPPORTED_DEVICE_COLOR_TEMPS,
+    VALUE_ON,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -95,19 +105,34 @@ class HomewerksSmartFanLight(LightEntity):
         return self._api.state.get("color_temp", 4000)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn on the light."""
+        """Turn on the light.
+
+        Sends all attributes as a single combined command to avoid
+        race conditions where a power-on resets brightness to 100%.
+        Color temperature is snapped to the four values the device
+        firmware supports: 2200, 2700, 5500, 7000 (device scale).
+        """
+        command: dict[str, Any] = {}
+
         # Handle brightness change
         if ATTR_BRIGHTNESS in kwargs:
-            # Convert from 0-255 to 0-100
+            # Convert from HA 0-255 to device 0-100
             brightness = int(kwargs[ATTR_BRIGHTNESS] * 100 / 255)
-            await self._api.set_brightness(brightness)
+            command[KEY_PERCENTAGE] = brightness
 
         # Handle color temperature change
         if ATTR_COLOR_TEMP_KELVIN in kwargs:
-            await self._api.set_color_temperature(kwargs[ATTR_COLOR_TEMP_KELVIN])
+            temp_kelvin = kwargs[ATTR_COLOR_TEMP_KELVIN]
+            temp_kelvin = max(MIN_COLOR_TEMP_KELVIN, min(MAX_COLOR_TEMP_KELVIN, temp_kelvin))
+            # Invert to device scale, then snap to nearest supported value
+            device_temp = MIN_COLOR_TEMP_KELVIN + MAX_COLOR_TEMP_KELVIN - temp_kelvin
+            device_temp = min(SUPPORTED_DEVICE_COLOR_TEMPS, key=lambda t: abs(t - device_temp))
+            command[KEY_COLOR_TEMPERATURE] = device_temp
 
-        # Turn on the light
-        await self._api.set_light_power(True)
+        # Always include power-on in the same frame
+        command[KEY_LIGHT_POWER] = VALUE_ON
+
+        await self._api.send_command(command)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the light."""
