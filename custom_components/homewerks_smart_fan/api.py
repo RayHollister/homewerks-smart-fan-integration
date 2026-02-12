@@ -46,9 +46,13 @@ class HomewerksSmartFanApi:
             "volume": 50,
         }
         self._listener_task: asyncio.Task | None = None
+        self._reconnect_task: asyncio.Task | None = None
         self._connected = False
         self._upnp_port = UPNP_PORT
         self._state_callbacks: list[callable] = []
+        self._reconnect_delay = 1  # Start with 1 second
+        self._max_reconnect_delay = 60  # Cap at 60 seconds
+        self._should_reconnect = True
 
     def register_state_callback(self, callback: callable) -> None:
         """Register a callback to be called when state changes."""
@@ -90,27 +94,37 @@ class HomewerksSmartFanApi:
         length = struct.pack('<I', len(payload_bytes))
         return FRAME_HEADER + length + FRAME_PADDING + payload_bytes
 
-    def _parse_response(self, data: bytes) -> dict[str, Any] | None:
-        """Parse a response from the device."""
-        try:
-            # Find the JSON payload
-            prefix = PAYLOAD_PREFIX.encode()
-            suffix = PAYLOAD_SUFFIX.encode()
+    def _parse_response(self, data: bytes) -> list[dict[str, Any]]:
+        """Parse one or more responses from the device.
 
-            start = data.find(prefix)
+        The device may send multiple frames concatenated in a single read.
+        Returns a list of parsed JSON payloads.
+        """
+        results = []
+        prefix = PAYLOAD_PREFIX.encode()
+        suffix = PAYLOAD_SUFFIX.encode()
+        search_start = 0
+
+        while search_start < len(data):
+            start = data.find(prefix, search_start)
             if start == -1:
-                return None
+                break
 
             start += len(prefix)
             end = data.find(suffix, start)
             if end == -1:
-                return None
+                break
 
-            json_str = data[start:end].decode('utf-8').strip()
-            return json.loads(json_str)
-        except (json.JSONDecodeError, UnicodeDecodeError) as err:
-            _LOGGER.debug("Failed to parse response: %s", err)
-            return None
+            try:
+                json_str = data[start:end].decode('utf-8').strip()
+                parsed = json.loads(json_str)
+                results.append(parsed)
+            except (json.JSONDecodeError, UnicodeDecodeError) as err:
+                _LOGGER.debug("Failed to parse response: %s", err)
+
+            search_start = end + len(suffix)
+
+        return results
 
     def _invert_color_temp(self, temp: int) -> int:
         """Invert color temperature (device uses opposite scale from standard Kelvin)."""
@@ -132,7 +146,12 @@ class HomewerksSmartFanApi:
                 self._state["light_power"] = new_val
                 changed = True
         if KEY_PERCENTAGE in parsed:
-            new_val = parsed[KEY_PERCENTAGE]
+            raw_val = parsed[KEY_PERCENTAGE]
+            # Device reports brightness as 0-255, normalize to 0-100
+            if isinstance(raw_val, (int, float)) and raw_val > 100:
+                new_val = round(raw_val * 100 / 255)
+            else:
+                new_val = raw_val
             if self._state["brightness"] != new_val:
                 self._state["brightness"] = new_val
                 changed = True
@@ -159,6 +178,7 @@ class HomewerksSmartFanApi:
                     timeout=CONNECTION_TIMEOUT,
                 )
                 self._connected = True
+                self._reconnect_delay = 1  # Reset backoff on successful connect
                 _LOGGER.debug("Connected to %s:%s", self._host, self._port)
 
                 # Start background listener
@@ -170,8 +190,43 @@ class HomewerksSmartFanApi:
                 self._connected = False
                 return False
 
+    async def _schedule_reconnect(self) -> None:
+        """Schedule a reconnection attempt with exponential backoff."""
+        if not self._should_reconnect:
+            return
+
+        _LOGGER.info(
+            "Scheduling reconnect to %s in %s seconds",
+            self._host,
+            self._reconnect_delay,
+        )
+        await asyncio.sleep(self._reconnect_delay)
+
+        # Exponential backoff
+        self._reconnect_delay = min(
+            self._reconnect_delay * 2, self._max_reconnect_delay
+        )
+
+        if await self.connect():
+            _LOGGER.info("Reconnected to %s:%s", self._host, self._port)
+            # Request current state after reconnecting
+            await self.request_state()
+        elif self._should_reconnect:
+            # Failed to reconnect, try again
+            self._reconnect_task = asyncio.create_task(self._schedule_reconnect())
+
     async def disconnect(self) -> None:
         """Disconnect from the device."""
+        self._should_reconnect = False
+
+        if self._reconnect_task:
+            self._reconnect_task.cancel()
+            try:
+                await self._reconnect_task
+            except asyncio.CancelledError:
+                pass
+            self._reconnect_task = None
+
         async with self._lock:
             if self._listener_task:
                 self._listener_task.cancel()
@@ -195,6 +250,9 @@ class HomewerksSmartFanApi:
 
     async def _listen_for_updates(self) -> None:
         """Listen for state updates from the device."""
+        consecutive_timeouts = 0
+        max_timeouts_before_healthcheck = 3
+
         while self._connected and self._reader:
             try:
                 data = await asyncio.wait_for(
@@ -206,20 +264,42 @@ class HomewerksSmartFanApi:
                     self._connected = False
                     break
 
-                parsed = self._parse_response(data)
-                if parsed:
+                consecutive_timeouts = 0  # Reset on successful read
+                parsed_list = self._parse_response(data)
+                for parsed in parsed_list:
                     _LOGGER.debug("Received state update: %s", parsed)
                     self._update_state_from_response(parsed)
 
             except asyncio.TimeoutError:
-                # No data received, continue listening
+                consecutive_timeouts += 1
+                if consecutive_timeouts >= max_timeouts_before_healthcheck:
+                    # Connection may be dead, try a health check
+                    _LOGGER.debug(
+                        "No data for %s minutes, sending keepalive",
+                        consecutive_timeouts,
+                    )
+                    try:
+                        query = {KEY_FAN_POWER: ""}
+                        frame = self._build_frame(query)
+                        self._writer.write(frame)
+                        await self._writer.drain()
+                        consecutive_timeouts = 0
+                    except Exception:
+                        _LOGGER.warning("Keepalive failed, connection appears dead")
+                        self._connected = False
+                        break
                 continue
             except asyncio.CancelledError:
-                break
+                return  # Don't reconnect if deliberately cancelled
             except Exception as err:
                 _LOGGER.debug("Error reading from device: %s", err)
                 self._connected = False
                 break
+
+        # Connection lost — schedule reconnection
+        if self._should_reconnect and not self._connected:
+            _LOGGER.warning("Connection lost to %s, will attempt reconnect", self._host)
+            self._reconnect_task = asyncio.create_task(self._schedule_reconnect())
 
     async def _send_command(self, data: dict[str, Any]) -> bool:
         """Send a command to the device."""
@@ -245,21 +325,29 @@ class HomewerksSmartFanApi:
             except Exception as err:
                 _LOGGER.error("Failed to send command: %s", err)
                 self._connected = False
+                if self._should_reconnect:
+                    self._reconnect_task = asyncio.create_task(
+                        self._schedule_reconnect()
+                    )
                 return False
 
     async def request_state(self) -> bool:
-        """Request current state from the device by sending a query."""
-        # The device broadcasts state periodically, but we can also
-        # trigger a state report by sending a status query command
+        """Request current state from the device.
+
+        Sending a key with an empty string value causes the device to
+        report back the current value for that key.
+        """
         if not self._connected:
             if not await self.connect():
                 return False
 
         async with self._lock:
             try:
-                # Send a query to get current state
-                # Try sending a "get" command - device may respond with current state
-                query = {"STA": "query"}
+                query = {
+                    KEY_FAN_POWER: "",
+                    KEY_LIGHT_POWER: "",
+                    KEY_PERCENTAGE: "",
+                }
                 frame = self._build_frame(query)
                 self._writer.write(frame)
                 await self._writer.drain()

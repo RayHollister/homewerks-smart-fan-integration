@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 import logging
 from typing import Any
 
@@ -16,9 +17,11 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import HomewerksSmartFanApi
-from .const import DOMAIN
+from .const import DOMAIN, SCAN_INTERVAL as SCAN_INTERVAL_SECONDS
 
 _LOGGER = logging.getLogger(__name__)
+
+SCAN_INTERVAL = timedelta(seconds=SCAN_INTERVAL_SECONDS)
 
 
 async def async_setup_entry(
@@ -43,7 +46,7 @@ class HomewerksSmartFanSpeaker(MediaPlayerEntity):
         | MediaPlayerEntityFeature.VOLUME_MUTE
         | MediaPlayerEntityFeature.VOLUME_STEP
     )
-    _attr_should_poll = False
+    _attr_should_poll = True
 
     def __init__(
         self,
@@ -114,3 +117,12 @@ class HomewerksSmartFanSpeaker(MediaPlayerEntity):
         if await self._api.set_mute(mute):
             self._is_muted = mute
             self.async_write_ha_state()
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return self._api.connected
+
+    async def async_update(self) -> None:
+        """Poll the device for current volume state."""
+        await self._api.get_volume()

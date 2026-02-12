@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.1] - 2026-02-11
+
+### Added
+- Automatic reconnection with exponential backoff (1s → 60s) when connection drops
+- Periodic polling fallback for state synchronization (every 30 seconds)
+- Connection health monitoring with keepalive after 3 minutes of silence
+- Entity availability tracking — entities show as unavailable when device is disconnected
+- Working device state query protocol — discovered that sending property keys with empty string values (e.g., `{"fan_power": ""}`) causes the device to report its current state
+- Initial state query on connect and reconnect so entities start with accurate values
+
+### Fixed
+- Fan, light, and brightness state not reliably syncing back to Home Assistant ([#3](https://github.com/RayHollister/homewerks-smart-fan-integration/issues/3))
+- Entities now start with accurate state on boot instead of defaulting to off
+- Connection drops no longer require HA restart — integration reconnects automatically
+- Response parser now handles multiple concatenated frames in a single TCP read
+- Brightness values from device (0-255) are now correctly normalized to HA's 0-100 scale
+- Send command failures now trigger automatic reconnection instead of silently failing
+
 ## [1.2.0] - 2025-01-22
 
 ### Added

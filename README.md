@@ -78,9 +78,15 @@ The fan uses a Linkplay-based module with a custom MCU for fan and light control
 
 ### State Not Updating
 
-The integration receives state updates from the fan in real-time. If the state isn't updating:
+The integration uses both real-time push updates and periodic polling (every 30 seconds) to keep state in sync. It also automatically reconnects if the connection drops. If the state still isn't updating:
+
 - Check your Home Assistant logs for connection errors
+- Verify the fan's IP address hasn't changed (check your router's DHCP client list)
 - Try removing and re-adding the integration
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a detailed list of changes in each version.
 
 ## License
 

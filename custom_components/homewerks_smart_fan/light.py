@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 import logging
 from typing import Any
 
@@ -17,9 +18,11 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import HomewerksSmartFanApi
-from .const import DOMAIN, MAX_COLOR_TEMP_KELVIN, MIN_COLOR_TEMP_KELVIN
+from .const import DOMAIN, MAX_COLOR_TEMP_KELVIN, MIN_COLOR_TEMP_KELVIN, SCAN_INTERVAL as SCAN_INTERVAL_SECONDS
 
 _LOGGER = logging.getLogger(__name__)
+
+SCAN_INTERVAL = timedelta(seconds=SCAN_INTERVAL_SECONDS)
 
 
 async def async_setup_entry(
@@ -42,7 +45,7 @@ class HomewerksSmartFanLight(LightEntity):
     _attr_supported_color_modes = {ColorMode.COLOR_TEMP}
     _attr_min_color_temp_kelvin = MIN_COLOR_TEMP_KELVIN
     _attr_max_color_temp_kelvin = MAX_COLOR_TEMP_KELVIN
-    _attr_should_poll = False
+    _attr_should_poll = True
 
     def __init__(
         self,
@@ -109,3 +112,12 @@ class HomewerksSmartFanLight(LightEntity):
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the light."""
         await self._api.set_light_power(False)
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return self._api.connected
+
+    async def async_update(self) -> None:
+        """Poll the device for current state as a fallback."""
+        await self._api.request_state()
