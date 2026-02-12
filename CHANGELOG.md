@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-02-11
+
+### Added
+- **Automatic device discovery** — scans local network for Homewerks Smart Fan devices during setup so users don't need to know the IP address ([#1](https://github.com/RayHollister/homewerks-smart-fan-integration/issues/1))
+- **Reconfigure flow** — easily update the device IP address via Settings → Integrations → Reconfigure without deleting and re-adding the integration
+- **Automatic IP recovery** — if the device IP changes, the integration scans the network on startup to find the device by its unique identifier (UDN) and updates the config entry automatically
+- Device identification via UPnP description (Linkplay-based devices on port 49152)
+- Config entry stores device UDN for persistent identification across IP changes
+- Manual setup shows instructions for finding the IP in the Home NetWerks Connect app
+
+### Changed
+- Config entry version bumped to 2 (automatic migration from v1)
+- Unique ID changed from IP address to device UDN for stability
+- Setup flow now scans for devices first, falls back to manual IP entry
+
 ## [1.2.1] - 2026-02-11
 
 ### Added

@@ -2,20 +2,42 @@
   "config": {
     "step": {
       "user": {
-        "title": "Homewerks Smart Fan",
-        "description": "Enter the IP address of your Homewerks Smart Fan (7148-01-AX).",
+        "title": "Select Your Fan",
+        "description": "Select your Homewerks Smart Fan from the list of discovered devices, or choose to enter the IP address manually.",
+        "data": {
+          "device": "Device"
+        }
+      },
+      "manual": {
+        "title": "Manual Setup",
+        "description": "Enter the IP address of your Homewerks Smart Fan.\n\nTo find the IP address, open the **Home NetWerks Connect** app and go to:\n**Devices** → ⚙️ (gear icon on your device) → **Speaker Info** → **IP**",
         "data": {
           "host": "IP Address",
-          "name": "Device Name"
+          "name": "Device Name (optional)"
+        }
+      },
+      "reconfigure": {
+        "title": "Update Device IP",
+        "description": "Select the device to update the IP address for this integration, or choose to enter it manually.",
+        "data": {
+          "device": "Device"
+        }
+      },
+      "reconfigure_manual": {
+        "title": "Update IP Address",
+        "description": "Enter the new IP address for your Homewerks Smart Fan.\n\nTo find the IP address, open the **Home NetWerks Connect** app and go to:\n**Devices** → ⚙️ (gear icon on your device) → **Speaker Info** → **IP**",
+        "data": {
+          "host": "IP Address"
         }
       }
     },
     "error": {
-      "cannot_connect": "Failed to connect to the fan. Please check the IP address and ensure the fan is powered on.",
+      "cannot_connect": "Failed to connect. Check the IP address and ensure the fan is powered on.",
       "unknown": "An unexpected error occurred."
     },
     "abort": {
-      "already_configured": "This device is already configured."
+      "already_configured": "This device is already configured. The IP address has been updated.",
+      "reconfigure_successful": "IP address updated successfully."
     }
   }
 }

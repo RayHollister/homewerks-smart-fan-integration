@@ -5,6 +5,12 @@ DOMAIN = "homewerks_smart_fan"
 # Device connection
 DEFAULT_PORT = 8899
 UPNP_PORT = 59152
+UPNP_DESCRIPTION_PORT = 49152
+
+# Config entry keys
+CONF_UDN = "udn"
+CONF_UUID = "uuid"
+CONF_FRIENDLY_NAME = "friendly_name"
 
 # Frame protocol
 FRAME_HEADER = b'\x18\x96\x18\x20'
@@ -35,3 +41,8 @@ SCAN_INTERVAL = 30
 
 # Connection timeout (seconds)
 CONNECTION_TIMEOUT = 5
+
+# Discovery
+DISCOVERY_TIMEOUT = 2
+DISCOVERY_CONCURRENCY = 50
+LINKPLAY_MANUFACTURER = "Linkplay Technology Inc."

@@ -48,16 +48,26 @@ This integration was developed through reverse engineering of the device's netwo
 1. Go to **Settings** → **Devices & Services**
 2. Click **+ Add Integration**
 3. Search for "Homewerks Smart Fan"
-4. Enter the IP address of your fan (find it in your router's DHCP client list)
-5. Click **Submit**
+4. The integration will automatically scan your network for Homewerks Smart Fan devices
+5. **If your fan is found**: Select it from the list and click **Submit**
+6. **If your fan is not found**: Choose "Enter IP address manually" and enter the IP address
 
-## Finding Your Fan's IP Address
+### Finding Your Fan's IP Address
 
-The fan will appear on your network with a hostname like "Bathroom" (or whatever you named it in the Home NetWerks app). You can find its IP address by:
+If automatic discovery doesn't find your fan, you can find the IP address in the **Home NetWerks Connect** app:
 
-1. Checking your router's DHCP client list
-2. Using a network scanner app
-3. Looking in the Home NetWerks Connect app settings
+1. Open the **Home NetWerks Connect** app
+2. Go to **Devices**
+3. Tap the **⚙️ gear icon** on your device
+4. Tap **Speaker Info**
+5. The **IP** address will be displayed
+
+### Changing the IP Address
+
+If your fan's IP address changes (e.g., after a router reboot or DHCP reassignment):
+
+- **Automatic recovery**: The integration will automatically scan the network to find the device by its unique identifier on the next Home Assistant restart. No action needed in most cases.
+- **Manual update**: Go to **Settings** → **Devices & Services** → find the Homewerks Smart Fan integration → click **⋮** (three dots) → **Reconfigure**. The integration will scan for devices, or you can enter the new IP address manually.
 
 ## Technical Details
 
