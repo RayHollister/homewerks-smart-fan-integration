@@ -355,7 +355,6 @@ class HomewerksSmartFanApi:
                 query = {
                     KEY_FAN_POWER: "",
                     KEY_LIGHT_POWER: "",
-                    KEY_PERCENTAGE: "",
                 }
                 frame = self._build_frame(query)
                 self._writer.write(frame)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 import logging
 from typing import Any
@@ -107,10 +108,11 @@ class HomewerksSmartFanLight(LightEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the light.
 
-        Sends all attributes as a single combined command to avoid
-        race conditions where a power-on resets brightness to 100%.
-        Color temperature is snapped to the four values the device
-        firmware supports: 2200, 2700, 5500, 7000 (device scale).
+        The device resets brightness to 100% whenever it receives
+        light_power=ON, so we only include the power command when
+        the light is actually off.  Brightness and color temperature
+        changes are sent as standalone commands when the light is
+        already on, matching the behavior of the Homewerks mobile app.
         """
         command: dict[str, Any] = {}
 
@@ -129,10 +131,16 @@ class HomewerksSmartFanLight(LightEntity):
             device_temp = min(SUPPORTED_DEVICE_COLOR_TEMPS, key=lambda t: abs(t - device_temp))
             command[KEY_COLOR_TEMPERATURE] = device_temp
 
-        # Always include power-on in the same frame
-        command[KEY_LIGHT_POWER] = VALUE_ON
-
-        await self._api.send_command(command)
+        if not self.is_on:
+            # Light is off — turn it on first, then apply settings
+            await self._api.set_light_power(True)
+            if command:
+                # Brief delay so the device finishes its power-on reset
+                await asyncio.sleep(0.5)
+                await self._api.send_command(command)
+        elif command:
+            # Light is already on — just send the adjustment, no power command
+            await self._api.send_command(command)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the light."""
