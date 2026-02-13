@@ -128,19 +128,21 @@ class HomewerksSmartFanApi:
         return results
 
     def _invert_color_temp(self, temp: int) -> int:
-        """Invert color temperature (device uses opposite scale from standard Kelvin)."""
-        # Device: 2200 = cool, 7000 = warm (opposite of standard Kelvin)
-        # Standard Kelvin: 2200 = warm, 7000 = cool
+        """Invert color temperature (device uses opposite scale from standard Kelvin).
+
+        Device: 7000=warm, 5500=soft, 2700=cool, 2200=daylight
+        Standard Kelvin: 2200=warm, 2700=soft, 5500=cool, 7000=daylight
+        """
         return MIN_COLOR_TEMP_KELVIN + MAX_COLOR_TEMP_KELVIN - temp
 
     @staticmethod
-    def _snap_device_color_temp(device_temp: int) -> int:
-        """Snap a device color temperature to the nearest supported value.
+    def _snap_color_temp(temp: int) -> int:
+        """Snap a color temperature to the nearest supported value.
 
         The device only supports four discrete color temps:
-        7000 (warm), 5500 (soft), 2700 (cool), 2200 (daylight).
+        2200, 2700, 5500, 7000 (device scale).
         """
-        return min(SUPPORTED_DEVICE_COLOR_TEMPS, key=lambda t: abs(t - device_temp))
+        return min(SUPPORTED_DEVICE_COLOR_TEMPS, key=lambda t: abs(t - temp))
 
     def _update_state_from_response(self, parsed: dict[str, Any], notify: bool = True) -> None:
         """Update internal state from parsed response."""
@@ -165,7 +167,7 @@ class HomewerksSmartFanApi:
                     self._state["brightness"] = new_val
                     changed = True
         if KEY_COLOR_TEMPERATURE in parsed:
-            # Invert color temp from device scale to standard Kelvin
+            # Invert from device scale to standard Kelvin
             device_temp = parsed[KEY_COLOR_TEMPERATURE]
             new_val = self._invert_color_temp(device_temp)
             if self._state["color_temp"] != new_val:
@@ -383,7 +385,7 @@ class HomewerksSmartFanApi:
         temp_kelvin = max(MIN_COLOR_TEMP_KELVIN, min(MAX_COLOR_TEMP_KELVIN, temp_kelvin))
         # Invert to device scale, then snap to nearest supported value
         device_temp = self._invert_color_temp(temp_kelvin)
-        device_temp = self._snap_device_color_temp(device_temp)
+        device_temp = self._snap_color_temp(device_temp)
         return await self._send_command({KEY_COLOR_TEMPERATURE: device_temp})
 
     async def send_command(self, data: dict[str, Any]) -> bool:
