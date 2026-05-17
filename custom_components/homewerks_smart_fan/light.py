@@ -10,8 +10,10 @@ from typing import Any
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ATTR_COLOR_TEMP_KELVIN,
+    ATTR_TRANSITION,
     ColorMode,
     LightEntity,
+    LightEntityFeature,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
@@ -56,6 +58,7 @@ class HomewerksSmartFanLight(LightEntity):
     _attr_supported_color_modes = {ColorMode.COLOR_TEMP}
     _attr_min_color_temp_kelvin = MIN_COLOR_TEMP_KELVIN
     _attr_max_color_temp_kelvin = MAX_COLOR_TEMP_KELVIN
+    _attr_supported_features = LightEntityFeature.TRANSITION
     _attr_should_poll = True
 
     def __init__(
@@ -66,6 +69,7 @@ class HomewerksSmartFanLight(LightEntity):
     ) -> None:
         """Initialize the light."""
         self._api = api
+        self._transition_task: asyncio.Task | None = None
         self._attr_unique_id = f"{entry.entry_id}_light"
         self._attr_name = "Light"
         self._attr_device_info = {
@@ -81,6 +85,8 @@ class HomewerksSmartFanLight(LightEntity):
 
     async def async_will_remove_from_hass(self) -> None:
         """Run when entity is removed from hass."""
+        if self._transition_task is not None:
+            self._transition_task.cancel()
         self._api.unregister_state_callback(self._handle_state_update)
 
     @callback
@@ -113,34 +119,99 @@ class HomewerksSmartFanLight(LightEntity):
         the light is actually off.  Brightness and color temperature
         changes are sent as standalone commands when the light is
         already on, matching the behavior of the Homewerks mobile app.
+
+        Supports the transition parameter (in seconds) to gradually
+        step through brightness and color temperature changes, since
+        the device firmware does not support native transitions.
         """
-        command: dict[str, Any] = {}
+        transition = kwargs.get(ATTR_TRANSITION)
 
-        # Handle brightness change
+        # Determine target brightness in device scale (0-100)
+        target_brightness: int | None = None
         if ATTR_BRIGHTNESS in kwargs:
-            # Convert from HA 0-255 to device 0-100
-            brightness = int(kwargs[ATTR_BRIGHTNESS] * 100 / 255)
-            command[KEY_PERCENTAGE] = brightness
+            target_brightness = int(kwargs[ATTR_BRIGHTNESS] * 100 / 255)
 
-        # Handle color temperature change
+        # Determine target color temp in device scale
+        target_device_temp: int | None = None
         if ATTR_COLOR_TEMP_KELVIN in kwargs:
             temp_kelvin = kwargs[ATTR_COLOR_TEMP_KELVIN]
             temp_kelvin = max(MIN_COLOR_TEMP_KELVIN, min(MAX_COLOR_TEMP_KELVIN, temp_kelvin))
-            # Invert to device scale, then snap to nearest supported value
             device_temp = MIN_COLOR_TEMP_KELVIN + MAX_COLOR_TEMP_KELVIN - temp_kelvin
-            device_temp = min(SUPPORTED_DEVICE_COLOR_TEMPS, key=lambda t: abs(t - device_temp))
-            command[KEY_COLOR_TEMPERATURE] = device_temp
+            target_device_temp = min(
+                SUPPORTED_DEVICE_COLOR_TEMPS, key=lambda t: abs(t - device_temp)
+            )
 
         if not self.is_on:
-            # Light is off — turn it on first, then apply settings
+            # Light is off — turn it on first
             await self._api.set_light_power(True)
-            if command:
-                # Brief delay so the device finishes its power-on reset
-                await asyncio.sleep(0.5)
-                await self._api.send_command(command)
-        elif command:
-            # Light is already on — just send the adjustment, no power command
+            await asyncio.sleep(0.5)
+
+        # If transition requested and we have something to transition
+        if transition and transition > 0 and (target_brightness is not None or target_device_temp is not None):
+            # Cancel any existing transition
+            if self._transition_task is not None:
+                self._transition_task.cancel()
+                try:
+                    await self._transition_task
+                except asyncio.CancelledError:
+                    pass
+
+            self._transition_task = asyncio.ensure_future(
+                self._async_transition(
+                    target_brightness, target_device_temp, transition
+                )
+            )
+            return
+
+        # No transition — apply immediately
+        command: dict[str, Any] = {}
+        if target_brightness is not None:
+            command[KEY_PERCENTAGE] = target_brightness
+        if target_device_temp is not None:
+            command[KEY_COLOR_TEMPERATURE] = target_device_temp
+        if command:
             await self._api.send_command(command)
+
+    async def _async_transition(
+        self,
+        target_brightness: int | None,
+        target_device_temp: int | None,
+        duration: float,
+    ) -> None:
+        """Gradually step brightness, then apply color temperature at the end."""
+        min_step_interval = 1.0
+
+        try:
+            # Phase 1: Brightness transition
+            if target_brightness is not None:
+                current_brightness = self._api.state.get("brightness", 100)
+                brightness_delta = abs(target_brightness - current_brightness)
+
+                num_steps = max(brightness_delta, 1)
+                step_interval = duration / num_steps
+                if step_interval < min_step_interval:
+                    num_steps = max(int(duration / min_step_interval), 1)
+                    step_interval = duration / num_steps
+
+                for i in range(1, num_steps + 1):
+                    progress = i / num_steps
+                    step_brightness = round(
+                        current_brightness + (target_brightness - current_brightness) * progress
+                    )
+                    await self._api.send_command({KEY_PERCENTAGE: step_brightness})
+
+                    if i < num_steps:
+                        await asyncio.sleep(step_interval)
+
+            # Phase 2: Apply color temperature after brightness is done
+            if target_device_temp is not None:
+                await self._api.send_command({KEY_COLOR_TEMPERATURE: target_device_temp})
+
+        except asyncio.CancelledError:
+            _LOGGER.debug("Transition cancelled")
+            raise
+        finally:
+            self._transition_task = None
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the light."""

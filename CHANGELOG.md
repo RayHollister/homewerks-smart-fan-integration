@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.0] - 2026-05-17
+
+### Added
+- **Software-based light transitions** — the `transition` parameter is now supported in `light.turn_on`, gradually stepping through brightness values over the requested duration since the device firmware does not support native transitions
+- Declared `LightEntityFeature.TRANSITION` so Home Assistant passes the transition parameter through to the entity
+- Brightness transitions complete first, then color temperature is applied at the end
+
+### Changed
+- Color temperature changes during a transition are applied as a single step after the brightness fade completes, rather than simultaneously
+
+## [1.4.0] - 2026-02-12
+
+### Fixed
+- **Brightness reset on polling** — `request_state()` no longer polls brightness, which was causing the device to reset brightness to 100% ([#4](https://github.com/RayHollister/homewerks-smart-fan-integration/issues/4))
+- **Brightness reset on power-on** — `light_power=ON` is now only sent when the light is actually off; brightness and color temp changes are sent as standalone commands when the light is already on, matching the Homewerks mobile app behavior
+- **Brightness 255 sentinel** — device state broadcasts reporting `percentage=255` are now ignored (sentinel value meaning "not tracked", not actual brightness); only values 0–100 are accepted
+- **Color temperature snapping** — device only supports four discrete values (7000, 5500, 2700, 2200 on device scale); incoming values are now snapped to the nearest supported value ([#5](https://github.com/RayHollister/homewerks-smart-fan-integration/issues/5))
+- Reverted echo suppression logic that was blocking legitimate device state updates from reaching the HA UI
+
+### Changed
+- Renamed `_snap_device_color_temp` to `_snap_color_temp` for consistency
+- Corrected docstrings to accurately describe the device's inverted color temperature scale
+
 ## [1.3.0] - 2026-02-11
 
 ### Added
